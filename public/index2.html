@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Candlestick Chart</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <script src="https://cdn.socket.io/4.1.2/socket.io.min.js"></script> <!-- Include Socket.IO client library -->
+</head>
+<body>
+  <div id="candlestickChart" style="width: 100%; height: 800px;"></div>
+
+  <script>
+    var layout = {
+      title: 'Live Candlestick Chart',
+      xaxis: {
+        type: 'date',
+        rangeslider: { visible: false }
+      },
+      yaxis: {
+        title: 'Price',
+        tickformat: '.2f',
+        side: 'right',
+      },
+      shapes: [],
+      annotations: [],
+
+      plot_bgcolor: 'rgba(0,0,0,0)',
+      paper_bgcolor: 'rgba(0,0,0,0)',
+    };
+    
+
+    var candlestickTrace = {
+      type: 'candlestick',
+      x: [],
+      close: [],
+      open: [],
+      high: [],
+      low: [],
+      increasing: { line: { color: 'blue' }, fillcolor: 'blue' },
+      decreasing: { line: { color: 'yellow' }, fillcolor: 'yellow' },
+      line: { width: 1 }
+    };
+    function plotUniformCandlestickChart(data) {
+      var uniformData = data.map(trace => {
+        trace.increasing = {line: {color: 'blue'}, fillcolor: 'blue'};
+        trace.decreasing = {line: {color: 'blue'}, fillcolor: 'blue'};
+        return trace;
+      });
+      Plotly.newPlot('myChart', uniformData, layout);
+    }
+
+    var supertrendTrace = {
+      type: 'scatter',
+      mode: 'lines',
+      line: { color: 'blue', width: 1 },
+      x: [],
+      y: [],
+      name: 'Supertrend'
+    };
+
+    var livePriceLine = {
+      type: 'line',
+      x0: null,
+      x1: null,
+      y0: null,
+      y1: null,
+      line: {
+        color: 'blue',
+        width: 2,
+        dash: 'dashdot'
+      }
+    };
+
+    var livePriceAnnotation = {
+      x: null,
+      y: null,
+      xref: 'x',
+      yref: 'y',
+      text: '',
+      showarrow: false,
+      align: 'right',
+      xanchor: 'left',
+      yanchor: 'middle',
+      font: {
+        color: 'blue',
+        size: 12
+      },
+      bordercolor: 'blue',
+      borderwidth: 1,
+      borderpad: 2,
+      bgcolor: 'white',
+      opacity: 0.8
+    };
+
+    function updateChart(newData) {
+      candlestickTrace.x.push(new Date(newData.t));
+      candlestickTrace.open.push(newData.o);
+      candlestickTrace.high.push(newData.h);
+      candlestickTrace.low.push(newData.l);
+      candlestickTrace.close.push(newData.c);
+
+      if (newData.supertrend) {
+        supertrendTrace.x.push(new Date(newData.t));
+        supertrendTrace.y.push(newData.supertrend[newData.supertrend.length - 1]);
+      }
+
+      if (newData.signals) {
+        let signalType = newData.signals[newData.signals.length - 1];
+        let color = signalType === 'buy' ? 'green' : 'red';
+        let signalAnnotation = {
+          x: new Date(newData.t),
+          y: newData.c,
+          xref: 'x',
+          yref: 'y',
+          text: signalType === 'buy' ? 'BUY' : 'SELL',
+          showarrow: true,
+          arrowhead: 2,
+          arrowsize: 1,
+          arrowcolor: color,
+          ax: 0,
+          ay: signalType === 'buy' ? -30 : 30,
+          font: {
+            color: 'white',
+            size: 12
+          },
+          bordercolor: color,
+          borderwidth: 1,
+          borderpad: 2,
+          bgcolor: color,
+          opacity: 0.8
+        };
+        layout.annotations.push(signalAnnotation);
+      }
+
+      Plotly.newPlot('candlestickChart', [candlestickTrace, supertrendTrace], layout);
+      plotUniformCandlestickChart(candlestickTrace);
+    }
+
+    function updateLivePrice(price) {
+      //var lastDate = candlestickTrace.x[candlestickTrace.x.length - 1];
+      livePriceLine.x0 = candlestickTrace.x[0];
+      livePriceLine.x1 = candlestickTrace.x[candlestickTrace.x.length - 1]; // Add 1 minute to the last candlestick time
+      livePriceLine.y0 = price;
+      livePriceLine.y1 = price;
+
+      livePriceAnnotation.x = livePriceLine.x1;
+      livePriceAnnotation.y = price;
+      livePriceAnnotation.text = `Live: ${price.toFixed(2)}`;
+
+      layout.shapes.push(livePriceLine);
+      layout.annotations.push(livePriceAnnotation);
+
+
+      
+
+      Plotly.newPlot('candlestickChart', [candlestickTrace, supertrendTrace], layout);
+      
+    }
+
+    var socket = io(); // Connect to WebSocket server using Socket.IO
+
+    // Get candlestick data socket
+    socket.on('candlestickData', function(newData) {
+      console.log(newData);
+      updateChart(newData);
+    });
+
+    // Get live price socket
+    socket.on('livePrice', function(newPrice) {
+      console.log(newPrice);
+      updateLivePrice(newPrice.p);
+    });
+  </script>
+</body>
+</html>

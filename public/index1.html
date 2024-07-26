@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Candlestick Chart</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdn.socket.io/4.1.2/socket.io.min.js"></script> <!-- Include Socket.IO client library -->
+</head>
+<body>
+    <div id="candlestickChart" style="width: 100%; height: 800px;"></div>
+    <script>
+        var layout = {
+            title: 'Live Candlestick Chart',
+            xaxis: {
+                type: 'date',
+                rangeslider: { visible: false }
+            },
+            yaxis: {
+                title: 'Price',
+                tickformat: '.2f',
+                side: 'right',
+            },
+            shapes: [],
+            annotations: []
+        };
+        var candlestickTrace = {
+            type: 'candlestick',
+            x: [],
+            close: [],
+            open: [],
+            high: [],
+            low: [],
+            increasing: { line: { color: 'green' },},
+            decreasing: {line: {color: 're'}},
+            marker:{
+                color : '',
+        }};
+
+        var livePriceLine = {
+            type: 'line',
+            x0: null,
+            x1: null,
+            y0: null,
+            y1: null,
+            line: {
+                hight:100,
+                color: 'blue',
+                width: 2,
+                dash: 'dash'
+            }
+        };
+
+        var livePriceAnnotation = {
+            x: null,
+            y: null,
+            xref: 'x',
+            yref: 'y',
+            text: '',
+            showarrow: false,
+            arrowhead:50,
+            ax:35,
+            ay:0,
+            align: 'right',
+            xanchor: 'left',
+            yanchor: 'bottom',
+            font: {
+                color: 'blue',
+                size: 12
+            },
+            bordercolor: 'blue',
+            borderwidth: 1,
+            borderpad: 2,
+            bgcolor: 'white',
+            opacity: 0.8
+        };
+        
+        var buySignalMarker = {
+            x: [],
+            y: [],
+            mode: 'markers',
+            name: 'Buy Signal',
+            marker: {
+                color: 'green',
+                size: 10,
+                symbol: 'triangle-up'
+            }
+        };
+
+        var sellSignalMarker = {
+            x: [],
+            y: [],
+            mode: 'markers',
+            name: 'Sell Signal',
+            marker: {
+                color: 'red',
+                size: 10,
+                symbol: 'triangle-down'
+            }
+        };
+
+        function updateChart(newData) {
+            var color1;
+            if(newData.c > newData.o)
+            {
+                color1 = 'green';
+            }
+            else{
+                color1 = 'red';
+            }
+            candlestickTrace.x.push(new Date(newData.t));
+            candlestickTrace.open.push(newData.o);
+            candlestickTrace.high.push(newData.h);
+            candlestickTrace.low.push(newData.l);
+            candlestickTrace.close.push(newData.c);
+            candlestickTrace.marker.color = color1;
+
+            Plotly.newPlot('candlestickChart', [candlestickTrace, buySignalMarker,sellSignalMarker], layout);
+        }
+
+        function updateLivePrice(newPrice) {
+            livePriceLine.x0 = candlestickTrace.x[0];
+            livePriceLine.x1 = candlestickTrace.x[candlestickTrace.x.length - 1];
+            livePriceLine.y0 = newPrice;
+            livePriceLine.y1 = newPrice;
+
+            livePriceAnnotation.x = candlestickTrace.x[candlestickTrace.x.length - 1];
+            livePriceAnnotation.y = newPrice;
+            livePriceAnnotation.text = `Live Price: ${newPrice.toFixed(2)}`;
+
+            layout.shapes = [livePriceLine];
+            layout.annotations = [livePriceAnnotation];
+
+            Plotly.relayout('candlestickChart', layout,{responsive: true}); // Update the layout to reflect the new live price
+        }
+        var lastSignal = null;
+        function addSignal(signalData) {
+            const time = new Date(signalData.open_time);
+            const price = signalData.signal === 'buy'? signalData.low : signalData.high;
+
+            if (signalData.signal === 'buy' && lastSignal !== 'buy') {
+                buySignalMarker.x.push(time);
+                buySignalMarker.y.push(price);
+                lastSignal = 'buy';
+            } else if (signalData.signal === 'sell' && lastSignal !== 'sell') {
+                sellSignalMarker.x.push(time);
+                sellSignalMarker.y.push(price);
+                lastSignal = 'sell';
+            }
+
+            Plotly.update('candlestickChart', {
+                x: [buySignalMarker.x, sellSignalMarker.x],
+                y: [buySignalMarker.y, sellSignalMarker.y]
+            }, [1, 2]);
+        }
+
+        var socket = io(); // Connect to WebSocket server using Socket.IO
+
+        // Get candlestick data socket
+        socket.on('candlestickData', function(newData) {
+            console.log(newData);
+            updateChart(newData);
+        });
+
+        // Get live price socket
+        socket.on('livePrice', function(newPrice){
+            console.log(newPrice);
+            //updateLivePrice(newPrice.p);
+        });
+        socket.on('signals', function(signalData){
+            console.log(signalData);
+            addSignal(signalData);
+        });
+    </script>
+</body>
+</html>
